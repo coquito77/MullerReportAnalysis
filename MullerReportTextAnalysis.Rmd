@@ -1,0 +1,178 @@
+---
+title: "At a Glance Data Sources April 2019"
+author: "Moises Evangelista"
+date: "Prepared `r format(Sys.time(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    fig_caption: yes
+    fig_crop: no
+    toc: true
+    toc_depth: 2
+subtitle: Report Validation
+fontsize: 11pt
+header-includes:
+- \usepackage{palatino}
+- \renewcommand{\familydefault}{\sfdefault}
+- \fontfamily{ppl}\selectfont
+
+- \usepackage{xcolor}
+- \usepackage[normalem]{ulem}
+- \hypersetup{colorlinks,urlcolor=blue, linkcolor=black}
+- \usepackage{float}
+- \PassOptionsToPackage{obeyspaces}{url}
+- \usepackage{graphicx, array, blindtext, longtable, tikz}
+- \usepackage[export]{adjustbox}
+
+---
+
+
+\makeatletter 
+\begingroup \lccode`+=32 \lowercase
+ {\endgroup \def\Url@ObeySp{\Url@Edit\Url@String{ }{+}}}
+ \def\Url@space{\penalty\Url@sppen\ }
+\makeatother
+
+```{r setup, include=FALSE}
+
+# the latex code above is to keep spaces in file paths
+
+knitr::opts_chunk$set(cache = TRUE, echo = FALSE, message = FALSE, warning = FALSE, include = FALSE,
+                      #dpi = 500
+                      dev = "cairo_pdf")
+
+rm(list = ls()) #start with empty workspace
+
+# setwd("~/GitHub/MullerReportAnalysis") # set the working directory
+
+# list.files()
+library(tidyverse)
+library(magick)
+
+library(pdftools)
+
+options(scipen = 999)
+
+```
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r getData}
+
+# read pdf file
+# break it into pages
+# ocr each page
+# get pic of all 400+ pages
+# do text analysis
+# https://www.justice.gov/storage/report.pdf
+# 
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r get_pageImages, echo=FALSE}
+
+rm(list = ls()) #start with empty workspace
+
+startTime <- Sys.time()
+
+download.file("https://www.justice.gov/storage/report.pdf",
+              destfile = "report.pdf"
+              ,mode = "wb"
+              ,quiet = FALSE)
+
+# get pdf info
+
+info <- pdf_info("report.pdf")
+
+# count number of pages in pdf file
+
+numberOfPageInPdf <- info[2] %>% unlist( use.names = FALSE)
+
+Sys.time() - startTime # Time difference of 2.665368 mins
+
+# create location to store pics
+
+ifelse(!dir.exists(file.path("./pics")),dir.create(file.path("./pics")), FALSE)
+
+startTime <- Sys.time()
+
+all_tables <- vector("list", length = numberOfPageInPdf )
+
+# loop for to save each page and get text info
+
+for (i in seq_along(1:numberOfPageInPdf)) {
+  
+  print(paste(i, "of", numberOfPageInPdf))
+  
+  x <- image_read_pdf("report.pdf",
+                      ,pages = i)
+  
+  try(
+    image_write(x, path = paste0("./pics", "/pg_", i,".png")))
+  
+  # error handling - skips to next URL if it gets an error
+  result <- try(
+    all_tables[[i]] <- x %>% 
+      image_ocr() %>%
+      as.data.frame()
+    
+  ); if(class(result) == "try-error") next;
+}
+
+print(Sys.time() - startTime) # Time difference of 5.65274 hours
+
+rpt_text <- all_tables %>% # head(1000) %>%
+  plyr::ldply(data.frame) 
+
+rm(list = setdiff(ls(), c("rpt_text"
+                          ,"numberOfPageInPdf")))
+
+save.image(file = "rpt_text.Rdata")
+
+
+```
+
+```{r createPictWithAllpages}
+
+rm(list = ls()) #start with empty workspace
+
+load("rpt_text.Rdata") 
+
+divisors <- function(x){
+  # https://stackoverflow.com/questions/19465720/writing-a-function-to-calculate-divisors-in-r
+  #  Vector of numberes to test against
+  y <- seq_len(x)
+  #  Modulo division. If remainder is 0 that number is a divisor of x so return it
+  y[ x%%y == 0 ]
+}
+
+
+divisors(numberOfPageInPdf)
+
+numberOfPageInPdf/32
+
+# 32 pages long by 14 wide
+
+img1 <- c(screenshot201901, screenshot201902)
+
+img2 <- c(screenshot201903, screenshot201904)
+
+img11 <- image_append(image_scale(img1), stack = TRUE)
+
+img22 <- image_append(image_scale(img2), stack = TRUE)
+
+img1122 <- c(img11, img22)
+
+comboImg <- image_append(image_scale(img1122))
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
