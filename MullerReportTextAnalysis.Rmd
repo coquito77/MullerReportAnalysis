@@ -93,7 +93,8 @@ info <- pdf_info("report.pdf")
 
 # count number of pages in pdf file
 
-numberOfPageInPdf <- info[2] %>% unlist( use.names = FALSE)
+numberOfPageInPdf <- info[2] %>%
+  unlist( use.names = FALSE)
 
 Sys.time() - startTime # Time difference of 2.665368 mins
 
@@ -109,13 +110,16 @@ all_tables <- vector("list", length = numberOfPageInPdf )
 
 for (i in seq_along(1:numberOfPageInPdf)) {
   
-  print(paste(i, "of", numberOfPageInPdf))
+  timeDiff <- Sys.time() - startTime 
+  
+  print(paste(i, "of", numberOfPageInPdf
+              ,as.double(timeDiff) %>% signif(5),
+              units(timeDiff)))
   
   x <- image_read_pdf("report.pdf",
-                      ,pages = i)
-  
-  try(
-    image_write(x, path = paste0("./pics", "/pg_", i,".png")))
+                      ,pages = i) %>% 
+    image_reducenoise(.) %>% 
+    image_despeckle()
   
   # error handling - skips to next URL if it gets an error
   result <- try(
@@ -124,9 +128,14 @@ for (i in seq_along(1:numberOfPageInPdf)) {
       as.data.frame()
     
   ); if(class(result) == "try-error") next;
+  
+  try(x %>% 
+        image_scale(., "400") %>% #resize proportionally to width: 400px
+        image_write(., path = paste0("./pics", "/pg_", i,".png")))
+  
 }
 
-print(Sys.time() - startTime) # Time difference of 5.65274 hours
+Sys.time() - startTime # Time difference of 1.745381 hours
 
 rpt_text <- all_tables %>% # head(1000) %>%
   plyr::ldply(data.frame) 
@@ -135,7 +144,6 @@ rm(list = setdiff(ls(), c("rpt_text"
                           ,"numberOfPageInPdf")))
 
 save.image(file = "rpt_text.Rdata")
-
 
 ```
 
@@ -153,26 +161,180 @@ divisors <- function(x){
   y[ x%%y == 0 ]
 }
 
-
 divisors(numberOfPageInPdf)
 
 numberOfPageInPdf/32
 
 # 32 pages long by 14 wide
 
-img1 <- c(screenshot201901, screenshot201902)
+# read page 1 then page 15 then page 15+15+1, ...
+# read page 2 then page 16 then page 15+15+1, ...
 
-img2 <- c(screenshot201903, screenshot201904)
+pgs_toPop <- matrix(1:numberOfPageInPdf
+                    , nrow = 14
+                    , byrow = TRUE)   %>%  # fill matrix row-wise
+  as_tibble()
 
-img11 <- image_append(image_scale(img1), stack = TRUE)
+startTime <- Sys.time()
 
-img22 <- image_append(image_scale(img2), stack = TRUE)
+for(i in names(pgs_toPop)){
+  
+  print(paste("column", i)) 
+  #  df[[paste(i, 'length', sep="_")]] <- str_length(df[[i]])
+  
+  pages <- pgs_toPop %>% select(i) %>% as.vector() %>% unlist(use.names = FALSE)
+  
+  for (j in seq_along(1:length(pages))) {
+    
+    print(paste("page", j))
+    
+    x <- image_read( paste0("./pics"
+                            , "/pg_"
+                            , pages[j]
+                            ,".png")) %>% 
+      image_border("black", "1x1")
+    
+    if(j == 1) {
+      img1 <- x 
+    }
+    else {
+      img1 <- img1 %>% c(x)
+    }
+    
+  }
+  
+  img1 <- img1 %>% image_append( stack = TRUE) %>% 
+    image_scale(., "400") %>% #resize proportionally to width: 400px
+    image_write( path = paste0("./pics", "/column_", i,".png"))
+  
+}
 
-img1122 <- c(img11, img22)
+print(Sys.time() - startTime) # Time difference of 1.148182 mins
 
-comboImg <- image_append(image_scale(img1122))
+startTime <- Sys.time()
 
+colpages <- list.files(recursive = TRUE, pattern = "column")
+
+for (j in seq_along(1:length(colpages))) {
+  
+  print(paste("page", j))
+  
+  x <- image_read( colpages[j]) %>% 
+    image_scale(., "400") %>% #resize proportionally to width: 200px
+    # image_despeckle(., times = 2)
+    image_contrast(., sharpen = 1)
+  
+  if(j == 1) {
+    img1 <- x
+  }
+  else {
+    img1 <- img1 %>% c(x)
+  }
+  
+  img1 <- img1 %>%
+    image_append( stack = FALSE)
+} 
+
+img1 %>% 
+  image_write( path = paste0("./pics", "/all_cols.png"))
+
+print(Sys.time() - startTime) # Time difference of 4.67948 mins
 
 ```
 
 
+```{r readFinalPicPlot}
+
+Cairo::CairoPDF(file = "//dpsssrvcrd55/rns_share/Moises/1etc_files/plotCitizenshipTrend.pdf"
+                #units = "in", dpi = 150,
+                ,width = 15, 
+                height = 12, 
+                pointsize = 10)
+
+
+ ggplot() + theme_void() +
+  annotation_custom(
+    grob = ggplotGrob(grid::grid.raster(all_cols)),
+    xmin = 0,
+    xmax = 3,
+    ymin = 5,
+    ymax = 10
+  ) 
+
+```
+
+
+```{r textAnalysis_tokens}
+
+rm(list = ls()) #start with empty workspace
+
+load("rpt_text.Rdata") 
+
+
+
+library(tidytext)
+
+library(textstem)
+library(qdapDictionaries)
+
+library(udpipe)
+
+startTime <- Sys.time()
+
+dl <- udpipe_download_model(language = "english-lines")
+str(dl)
+
+print(Sys.time() - startTime) 
+
+ud_model <- udpipe_load_model(dl$file_model)
+
+startTime <- Sys.time()
+
+toks <- rpt_text %>% 
+  select(text = 1) %>% 
+  # head() %>% 
+  rownames_to_column( var = "id")
+
+toks <- udpipe_annotate(ud_model, x = toks$text, doc_id = toks$id) %>% 
+  as.data.frame()
+
+print(Sys.time() - startTime) # Time difference of 3.051517 mins
+
+rm(list = setdiff(ls(), c("rpt_text"
+                          ,"toks")))
+
+save.image(file = "rpt_text.Rdata")
+
+```
+
+```{r textAnalysis_tokens}
+
+rm(list = ls()) #start with empty workspace
+ 
+load("rpt_text.Rdata") 
+
+library(tidytext)
+
+verbs <- toks %>% 
+  mutate( token = gsub("[^[:alnum:]]", perl = TRUE, "", token),
+          token = trimws(toupper(token))) %>% 
+  filter(upos == "VERB") %>% 
+  count(token) %>% 
+  filter(!grepl("^THE$|TRUMP", token))
+
+
+
+text_bigrams <- rpt_text %>%
+  select(text = 1) %>% head() %>% 
+  unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
+  separate(bigram, c("A", "B"), " ", extra = "merge") %>% 
+  # mutate_at(vars(A, B),
+  #           list(~gsub("\\s+", " ",.))) %>% 
+  mutate_at(vars(A, B),
+            list(~trimws(toupper(.)))) %>% 
+  inner_join(verbs %>% 
+               select(B = token)) %>% 
+  count(A, B)
+
+
+```
