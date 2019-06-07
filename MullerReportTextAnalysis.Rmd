@@ -55,12 +55,6 @@ options(scipen = 999)
 ```
 
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
 ```{r getData}
 
 # read pdf file
@@ -76,7 +70,7 @@ When you click the **Knit** button a document will be generated that includes bo
 
 You can also embed plots, for example:
 
-```{r get_pageImages, echo=FALSE}
+```{r get_pageImages, echo = FALSE, eval=FALSE}
 
 rm(list = ls()) #start with empty workspace
 
@@ -147,7 +141,7 @@ save.image(file = "rpt_text.Rdata")
 
 ```
 
-```{r createPictWithAllpages}
+```{r createPictWithAllpages, eval = FALSE}
 
 rm(list = ls()) #start with empty workspace
 
@@ -163,7 +157,7 @@ divisors <- function(x){
 
 divisors(numberOfPageInPdf)
 
-numberOfPageInPdf/32
+numberOfPageInPdf/14
 
 # 32 pages long by 14 wide
 
@@ -171,9 +165,15 @@ numberOfPageInPdf/32
 # read page 2 then page 16 then page 15+15+1, ...
 
 pgs_toPop <- matrix(1:numberOfPageInPdf
-                    , nrow = 14
+                    , nrow = 20
                     , byrow = TRUE)   %>%  # fill matrix row-wise
   as_tibble()
+
+
+# remove previous files
+
+list.files(recursive = TRUE, pattern = "column") %>%
+  unlink
 
 startTime <- Sys.time()
 
@@ -209,7 +209,7 @@ for(i in names(pgs_toPop)){
   
 }
 
-print(Sys.time() - startTime) # Time difference of 1.148182 mins
+print(Sys.time() - startTime) # Time difference of 59.08112 secs
 
 startTime <- Sys.time()
 
@@ -238,101 +238,159 @@ for (j in seq_along(1:length(colpages))) {
 img1 %>% 
   image_write( path = paste0("./pics", "/all_cols.png"))
 
-print(Sys.time() - startTime) # Time difference of 4.67948 mins
+print(Sys.time() - startTime) # Time difference of 2.88814 mins
 
 ```
 
 
-```{r readFinalPicPlot}
+```{r readFinalPicPlot, eval = TRUE, include = TRUE, fig.width=4}
 
-Cairo::CairoPDF(file = "//dpsssrvcrd55/rns_share/Moises/1etc_files/plotCitizenshipTrend.pdf"
-                #units = "in", dpi = 150,
-                ,width = 15, 
-                height = 12, 
-                pointsize = 10)
+all_cols <- image_read( "pics/all_cols.png") %>% 
+  image_scale(., "500")
+# 
+# library(grid)
+# 
+# Cairo::CairoPDF(file = "plotAllPages.pdf"
+#                 #units = "in", dpi = 150,
+#                 ,width = 15,
+#                 height = 12,
+#                 pointsize = 10)
+# 
+# ggplot() +
+#   theme_void() +
+#   annotation_custom(
+#     grob = ggplotGrob(grid.raster(all_cols)),
+#     xmin = 0,
+#     xmax = 3,
+#     ymin = 5,
+#     ymax = 10
+#   ) 
 
+fig <- image_graph(width = 500, height = 562, res = 96)
 
- ggplot() + theme_void() +
-  annotation_custom(
-    grob = ggplotGrob(grid::grid.raster(all_cols)),
-    xmin = 0,
-    xmax = 3,
-    ymin = 5,
-    ymax = 10
-  ) 
+ggplot() +
+  theme_void()
+dev.off()
+
+# Combine
+out <- image_composite(fig, all_cols)
+print(out)
 
 ```
 
 
-```{r textAnalysis_tokens}
+```{r textAnalysis_tokens1, eval = TRUE}
 
 rm(list = ls()) #start with empty workspace
 
 load("rpt_text.Rdata") 
 
+library(readtext)
 library(tidytext)
 
 library(textstem)
 library(qdapDictionaries)
 
-library(udpipe)
+data(action.verbs)
+
+acntVersbs <- action.verbs
+
+# library(udpipe)
 
 startTime <- Sys.time()
 
-dl <- udpipe_download_model(language = "english-lines")
-str(dl)
+pdfText <- readtext("report.pdf")
 
-print(Sys.time() - startTime) 
+Sys.time() - startTime # Time difference of 29.90652 secs
 
-ud_model <- udpipe_load_model(dl$file_model)
+nrc_joy <- get_sentiments("nrc") 
 
-startTime <- Sys.time()
+text_words <- pdfText %>%
+  unnest_tokens(word, text)
+  
+  actvVerbs <- text_words %>% 
+  mutate(acntVerb  = grepl(acntVersbs %>%
+                             paste0("^", ., "$", collapse = "|")
+                           , word)) %>% 
+  filter(acntVerb == TRUE) %>% 
+  count(word)
 
-toks <- rpt_text %>% 
-  select(text = 1) %>% 
-  # head() %>% 
-  rownames_to_column( var = "id")
-
-toks <- udpipe_annotate(ud_model, x = toks$text, doc_id = toks$id) %>% 
-  as.data.frame()
-
-print(Sys.time() - startTime) # Time difference of 3.051517 mins
-
-rm(list = setdiff(ls(), c("rpt_text"
-                          ,"toks")))
-
-save.image(file = "rpt_text.Rdata")
-
-```
-
-```{r textAnalysis_tokens}
-
-rm(list = ls()) #start with empty workspace
- 
-load("rpt_text.Rdata") 
-
-library(tidytext)
-
-verbs <- toks %>% 
-  mutate( token = gsub("[^[:alnum:]]", perl = TRUE, "", token),
-          token = trimws(toupper(token))) %>% 
-  filter(upos == "VERB") %>% 
-  count(token) %>% 
-  filter(!grepl("^THE$|TRUMP", token))
-
-
-
+sntimet <- text_words %>% 
+  inner_join(nrc_joy)
+  
 text_bigrams <- rpt_text %>%
-  select(text = 1) %>% head() %>% 
+  select(text = 1) %>%
   unnest_tokens(bigram, text, token = "ngrams", n = 2) %>% 
   separate(bigram, c("A", "B"), " ", extra = "merge") %>% 
+  filter(!A %in% stop_words$word) %>% 
+  filter(!B %in% stop_words$word) %>%
+  filter(grepl("[A-z]", A)) %>% 
+  filter(grepl("[A-z]", B)) %>% 
   # mutate_at(vars(A, B),
   #           list(~gsub("\\s+", " ",.))) %>% 
   mutate_at(vars(A, B),
             list(~trimws(toupper(.)))) %>% 
-  inner_join(verbs %>% 
-               select(B = token)) %>% 
-  count(A, B)
+  # inner_join(verbs %>% 
+  #              select(B = token)) %>% 
+  count(A, B, sort = TRUE) %>% 
+  filter(n >=30)
+
+library(igraph)
+
+g <- text_bigrams %>% 
+  graph_from_data_frame(., directed=T) 
+
+E(g)$weight = text_bigrams$n
+
+
+```
+
+```{r plotNetworkVerbs, include = TRUE}
+
+plot(g
+     ,edge.arrow.size = .2
+     ,edge.curved = 0
+     ,vertex.label = V(g)$names
+     ,vertex.color = "orange"
+     ,vertex.frame.color="#555555"
+     ,vertex.size = 5 #as.matrix(node.size)
+     ,vertex.label = V(g)$names
+     ,vertex.label.color = "black",
+     vertex.label.cex = .3) 
+# 
+# RColorBrewer::display.brewer.all( n = 10
+#                                   , exact.n = FALSE) # display palettes
+# 
+# getPalette = grDevices::colorRampPalette(RColorBrewer::brewer.pal(
+#   length (unique(text_bigrams$CurrentStep))
+#   , "Paired"))
+# 
+# colrs <- getPalette(length (unique(text_bigrams$CurrentStep))) %>% 
+#   sub("#F8F18F", "#4d4d4d",.)
+# 
+# V(g)$name
+# 
+# V(g)$color <- colrs
+# 
+# edge.start <- ends(g, es=E(g), names=F)[,1]
+# 
+# edge.col <- V(g)$color[edge.start]
+# 
+# plot(g
+#      ,layout=layout.circle
+#      #,vertex.label.color = adjustcolor(V(g)$color, alpha.f = 0.99)
+#      ,edge.arrow.size = scales::rescale(E(g)$weight, to=c(.5,5))  
+#      #,edge.arrow.size = log( E(g)$weight) /3# 0.2
+#      ,vertex.label.cex = 0.70
+#      ,main = ""
+#      ,edge.curved =.1
+#      ,edge.color =  adjustcolor(edge.col, alpha.f = 0.5)
+#      ,edge.width = 5# scales::rescale(E(g)$weight, to=c(.5, 10))    #log( E(g)$weight) # 5, #log(E(g)$width),
+#      # edge.color =  adjustcolor(V(g)$color, alpha.f = 1),
+#      ,vertex.color = adjustcolor(V(g)$color, alpha.f = 0.5),
+#      vertex.size = 5)
+
+
 
 
 ```
