@@ -54,6 +54,7 @@ options(scipen = 999)
 
 ```
 
+# The Mueller Report, officially titled Report on the Investigation into Russian Interference in the 2016 Presidential Election
 
 ```{r getData}
 
@@ -66,9 +67,6 @@ options(scipen = 999)
 # 
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
 
 ```{r get_pageImages, echo = FALSE, eval=FALSE}
 
@@ -243,7 +241,7 @@ print(Sys.time() - startTime) # Time difference of 2.88814 mins
 ```
 
 
-```{r readFinalPicPlot, eval = TRUE, include = TRUE, fig.width=4}
+```{r readFinalPicPlot, eval = TRUE, warning=FALSE, message = FALSE, include = TRUE, fig.width=4}
 
 all_cols <- image_read( "pics/all_cols.png") %>% 
   image_scale(., "500")
